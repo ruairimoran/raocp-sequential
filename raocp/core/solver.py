@@ -412,6 +412,17 @@ class Solver:
         tikz.save('4-3-residuals.tex')
         plt.show()
 
+    @staticmethod
+    def plot_residual_comparisons(xi, solver1, solver2, solver1_name, solver2_name):
+        width = 2
+        plt.semilogy(solver1.__error_cache[:, xi], linewidth=width, linestyle="solid")
+        plt.semilogy(solver2.__error_cache[:, xi], linewidth=width, linestyle="solid")
+        plt.title(f"comparison of {solver1_name} solver and {solver2_name} solver xi_{xi} residual value")
+        plt.ylabel(r"log(residual value)", fontsize=12)
+        plt.xlabel(r"iteration", fontsize=12)
+        plt.legend((f"{solver1_name}", f"{solver2_name}"))
+        plt.show()
+
     def plot_solution(self, solver):
         primal, _ = self.__cache.get_primal()
         seg_p = self.__cache.get_primal_segments()
