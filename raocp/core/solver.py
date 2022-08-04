@@ -14,15 +14,15 @@ class Solver:
     Solver for RAOCPs using proximal algorithms
     """
 
-    def __init__(self, problem_spec: spec.RAOCP, tol=1e-5, max_iters=10):
+    def __init__(self, problem_spec: spec.RAOCP, tol=1e-5, max_outer_iters=20, max_inner_iters=50):
         self.__raocp = problem_spec
         self.__cache = cache.Cache(self.__raocp)
         self.__operator = ops.Operator(self.__cache)
         self.__initial_state = None
         self.__parameter_1 = None
         self.__parameter_2 = None
-        self.__chock_iter = 0
-        self.__max_iters = max_iters
+        self.__max_outer_iters = max_outer_iters
+        self.__max_inner_iters = max_inner_iters
         self.__tol = tol
         self.__error = [np.zeros(1)] * 3
         self.__delta_error = [np.zeros(1)] * 3
@@ -31,11 +31,10 @@ class Solver:
         self.__counter_chock_operator = 0
         # andersons direction
         self.__andys_memory_size = 3
-        self.__andys_x = None
-        self.__andys_g = None
+        self.__andys_x = []
+        self.__andys_g = [None]  # must have 'None' to make x and g have same length
         self.__andys_matrix_x_k = None
         self.__andys_matrix_g_k = None
-        self.__andys_counter_k = None
 
     def primal_k_plus_half(self):
         # get memory space for ell_transpose_dual
@@ -120,6 +119,12 @@ class Solver:
 
         return max(self.__error)
 
+    def cache_errors(self, i_):
+        if i_ == 0:
+            self.__error_cache = np.array(self.__error)
+        else:
+            self.__error_cache = np.vstack((self.__error_cache, np.array(self.__error)))
+
     def get_alphas(self):
         # find alpha_1 and _2
         _, prim = self.__cache.get_primal()
@@ -137,20 +142,10 @@ class Solver:
         self.__parameter_1 = one_over_norm
         self.__parameter_2 = one_over_norm
 
-    def check_termination_criteria(self, current_error_, current_iteration_, keep_running_):
-        # check stopping criteria
-        if current_iteration_ >= self.__max_iters:
-            keep_running_ = False
-        if current_error_ <= self.__tol:
-            keep_running_ = False
-        if keep_running_ is True:
-            current_iteration_ = current_iteration_ + 1
-        return current_iteration_, keep_running_
-
     def check_convergence(self, current_iter_):
-        if current_iter_ < self.__max_iters:
+        if current_iter_ < self.__max_outer_iters:
             return 0  # converged
-        elif current_iter_ >= self.__max_iters:
+        elif current_iter_ >= self.__max_outer_iters:
             return 1  # not converged
         else:
             raise Exception("Iteration error in solver")
@@ -198,74 +193,68 @@ class Solver:
         self.__initial_state = initial_state
         self.__cache.cache_initial_state(self.__initial_state)
         self.get_alphas()
-        current_error = None
-        accepted_x_kplus1 = None
-        accepted = False
         pos_k = 0
         pos_kplus1 = 1
         print("timer started")
         tick = time.perf_counter()
-        counter_sm = 0
-        counter_sm_real = 0
-        keep_running = True
-        while keep_running:
-            eta = [np.zeros(0)] * 2
-            r_safe = None
-            vector_x_k = self.setup_super_chock()
-            repeat = True
-            while repeat:
-                norm_resid_x, candidate_vector_x_kplus1 = self.get_chock_norm_residual(vector_x_k, vector=True)
-                if counter_sm == 0:
-                    eta[pos_k] = norm_resid_x
-                    r_safe = norm_resid_x
-                if norm_resid_x < 1e-1:  # self.__tol:
-                    repeat = False
+        eta = [np.zeros(0)] * 2
+        r_safe = None
+        vector_x_k = self.get_initial_vector_x()
+        andersons_setup_iterations = 2
+        i = 0
+        for i in range(self.__max_outer_iters):
+            # update andersons buffer with accepted vector from previous iteration
+            if i > andersons_setup_iterations:
+                self.andersons_update_buffer(vector_x_k, i)
+            # step 1
+            norm_resid_x, resid_x, candidate_vector_x_kplus1 = self.get_chock_norm_residual(vector_x_k)
+            # check termination criteria
+            current_error = self.get_current_error()
+            self.cache_errors(i)
+            if current_error <= self.__tol:
+                break
+            # initialise
+            if i == 0:
+                eta[pos_k] = norm_resid_x
+                r_safe = norm_resid_x
+            # step 2
+            if i <= andersons_setup_iterations:
+                direction = self.andersons_setup(vector_x_k, i, resid_x)
+            else:
+                direction = self.andersons_direction(i)
+            # step 3
+            if norm_resid_x <= c0 * eta[pos_k]:
+                eta[pos_kplus1] = norm_resid_x
+                vector_x_k = vector_x_k + direction
+                continue  # K_0
+            # step 4
+            eta[pos_kplus1] = eta[pos_k]
+            tau = 1
+            # step 5
+            for j in range(self.__max_inner_iters):
+                vector_w_k = vector_x_k + tau * direction
+                norm_resid_w, resid_w, _ = self.get_chock_norm_residual(vector_w_k)
+                # step 5a
+                if norm_resid_x <= r_safe and norm_resid_w <= c1 * norm_resid_x:
+                    vector_x_k = vector_w_k
+                    r_safe = norm_resid_w + c2 ** i
+                    break  # K_1
+                # step 5b
+                rho = norm_resid_w ** 2 - 2 * alpha * self.chock_inner_prod(resid_w, vector_w_k - vector_x_k)
+                if rho >= sigma * norm_resid_w * norm_resid_x:
+                    vector_x_k = vector_x_k - lamda * (rho / norm_resid_w ** 2) * resid_w
+                    break  # K_2
                 else:
-                    update_direction = self.andersons_direction(vector_x_k, candidate_vector_x_kplus1)
-                    if norm_resid_x <= c0 * eta[pos_k]:
-                        eta[pos_kplus1] = norm_resid_x
-                        accepted_x_kplus1 = vector_x_k + update_direction
-                        accepted = True
-                    else:
-                        eta[pos_kplus1] = eta[pos_k]
-                        tau = 1
-                        vector_w_k = vector_x_k + tau * update_direction
-                        norm_resid_w, resid_w = self.get_chock_norm_residual(vector_w_k, residual=True)
-                        if norm_resid_x <= r_safe and norm_resid_w <= c1 * norm_resid_x:
-                            accepted_x_kplus1 = vector_w_k
-                            accepted = True
-                            r_safe = norm_resid_w + c2**counter_sm
-                        else:
-                            rho = norm_resid_w**2 - 2 * alpha * self.chock_inner_prod(resid_w, vector_w_k - vector_x_k)
-                            if rho >= sigma * norm_resid_w * norm_resid_x:
-                                accepted_x_kplus1 = vector_x_k - lamda * (rho / norm_resid_w**2) * resid_w
-                                accepted = True
-                            else:
-                                tau *= beta
-                if not repeat:
-                    current_error = self.get_current_error()
-                elif accepted:
-                    current_error = self.get_current_error()
-                    vector_x_k = accepted_x_kplus1
-                    accepted = False
-                    counter_sm_real += 1
-                if counter_sm == 0:
-                    self.__error_cache = np.array(self.__error)
-                else:
-                    self.__error_cache = np.vstack((self.__error_cache, np.array(self.__error)))
-                eta[pos_k] = eta[pos_kplus1]
-                counter_sm += 1
+                    tau *= beta
 
-            # check stopping criteria
-            self.__chock_iter, keep_running = self.check_termination_criteria(current_error,
-                                                                              self.__chock_iter,
-                                                                              keep_running)
+            # step 6
+            eta[pos_k] = eta[pos_kplus1]
 
         tock = time.perf_counter()
         print(f"timer stopped in {tock - tick:0.4f} seconds")
-        return self.check_convergence(self.__chock_iter), self.__chock_iter, counter_sm_real, self.__counter_chock_operator
+        return self.check_convergence(i), i, self.__counter_chock_operator
 
-    def get_chock_norm_residual(self, vector_x_k_, residual=False, vector=False):
+    def get_chock_norm_residual(self, vector_x_k_):
         prim_k_, dual_k_ = self.vector_to_parts(vector_x_k_)
         self.__cache.set_primal(prim_k_)
         self.__cache.set_dual(dual_k_)
@@ -276,12 +265,7 @@ class Solver:
         vector_x_kplus1_ = self.parts_to_vector(prim_kplus1_, dual_kplus1_)
         resid_ = self.chock_residual(vector_x_k_, vector_x_kplus1_)
         norm_ = self.chock_norm(resid_)
-        if residual:
-            return norm_, resid_
-        elif vector:
-            return norm_, vector_x_kplus1_
-        else:
-            return norm_
+        return norm_, resid_, vector_x_kplus1_
 
     def chock_operator(self):
         # run primal part of algorithm
@@ -322,15 +306,11 @@ class Solver:
         modified_dual = [a_i - (self.__parameter_2 * b_i) for a_i, b_i in zip(dual_, ell_prim)]
         return self.parts_to_vector(modified_prim, modified_dual)
 
-    def setup_super_chock(self):
-        setup_prim_x_kminus1, _ = self.__cache.get_primal()
-        setup_dual_x_kminus1, _ = self.__cache.get_dual()
-        setup_vector_x_kminus1 = self.parts_to_vector(setup_prim_x_kminus1, setup_dual_x_kminus1)
-        _, setup_vector_x_k = self.get_chock_norm_residual(setup_vector_x_kminus1, vector=True)
-        _, setup_vector_x_kplus1 = self.get_chock_norm_residual(setup_vector_x_k, vector=True)
-        _, setup_vector_x_kplus2 = self.get_chock_norm_residual(setup_vector_x_kplus1, vector=True)
-        self.andersons_setup(setup_vector_x_k, setup_vector_x_kplus1, setup_vector_x_kplus2)
-        return setup_vector_x_kplus2
+    def get_initial_vector_x(self):
+        setup_prim_x_, _ = self.__cache.get_primal()
+        setup_dual_x_, _ = self.__cache.get_dual()
+        setup_vector_x_ = self.parts_to_vector(setup_prim_x_, setup_dual_x_)
+        return setup_vector_x_
 
     @staticmethod
     def parts_to_vector(prim_, dual_):
@@ -352,35 +332,36 @@ class Solver:
 
         return prim_, dual_
 
-    def andersons_setup(self, x_k_, x_kplus1_, x_kplus2_):
-        self.__andys_x = [x_k_, x_kplus1_]  # list of iterates x
-        self.__andys_g = [x_kplus1_ - x_k_, x_kplus2_ - x_kplus1_]  # list of residuals
-        self.__andys_matrix_x_k = self.__andys_x[1] - self.__andys_x[0]  # matrix of increments in x
-        self.__andys_matrix_g_k = self.__andys_g[1] - self.__andys_g[0]  # matrix of increments in residuals
-        self.__andys_counter_k = 1
+    def andersons_setup(self, vector_x_kplus1_, iplus1_, residual_):
+        i_ = iplus1_ - 1
+        self.__andys_x.append(vector_x_kplus1_)  # list of iterates x
+        if len(self.__andys_x) >= 2:
+            self.__andys_g.append(self.__andys_x[iplus1_] - self.__andys_x[i_])  # list of residuals
+        if len(self.__andys_g) >= 3:
+            self.__andys_matrix_x_k = self.__andys_x[2] - self.__andys_x[1]  # matrix of increments in x
+            self.__andys_matrix_g_k = self.__andys_g[2] - self.__andys_g[1]  # matrix of increments in residuals
+        # return -residual
+        direction_ = -residual_
+        return direction_
     
-    def andersons_direction(self, old_x_kplus1_, old_x_kplus2_):
-        m_k = min(self.__andys_counter_k, self.__andys_memory_size)
-        self.__andys_x.append(old_x_kplus1_)
-        self.__andys_g.append(old_x_kplus2_ - self.__andys_x[self.__andys_counter_k + 1])
-        self.__andys_matrix_x_k = np.hstack((self.__andys_matrix_x_k,
-                                             self.__andys_x[self.__andys_counter_k + 1] -
-                                             self.__andys_x[self.__andys_counter_k]))
-        self.__andys_matrix_g_k = np.hstack((self.__andys_matrix_g_k,
-                                             self.__andys_g[self.__andys_counter_k + 1] -
-                                             self.__andys_g[self.__andys_counter_k]))
+    def andersons_direction(self, iplus1_):
+        i_ = iplus1_ - 1
+        # least squares
+        gamma_k_ = np.linalg.lstsq(self.__andys_matrix_g_k, self.__andys_g[i_], rcond=None)[0]
+        direction_ = self.__andys_g[i_] - ((self.__andys_matrix_x_k + self.__andys_matrix_g_k) @ gamma_k_)
+        return direction_
+
+    def andersons_update_buffer(self, vector_x_kplus1_, iplus2_):
+        iplus1_ = iplus2_ - 1
+        i_ = iplus1_ - 1
+        m_k = min(i_, self.__andys_memory_size)
+        self.__andys_x.append(vector_x_kplus1_)
+        self.__andys_g.append(self.__andys_x[iplus1_] - self.__andys_x[i_])
+        self.__andys_matrix_x_k = np.hstack((self.__andys_matrix_x_k, self.__andys_x[iplus1_] - self.__andys_x[i_]))
+        self.__andys_matrix_g_k = np.hstack((self.__andys_matrix_g_k, self.__andys_g[iplus1_] - self.__andys_g[i_]))
         if self.__andys_matrix_x_k.shape[1] > m_k:
             self.__andys_matrix_x_k = np.delete(self.__andys_matrix_x_k, axis=1, obj=0)
             self.__andys_matrix_g_k = np.delete(self.__andys_matrix_g_k, axis=1, obj=0)
-        self.__andys_counter_k = self.__andys_counter_k + 1
-
-        # Least squares
-        gamma_k = np.linalg.lstsq(self.__andys_matrix_g_k, self.__andys_g[self.__andys_counter_k], rcond=None)[0]
-
-        direction = self.__andys_g[self.__andys_counter_k] - \
-            ((self.__andys_matrix_x_k + self.__andys_matrix_g_k) @ gamma_k)
-
-        return direction
 
     # print ###################################################
     def print_states(self):

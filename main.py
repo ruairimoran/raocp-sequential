@@ -32,7 +32,7 @@ tree = r.core.MarkovChainScenarioTreeFactory(transition_prob=p,
 # RAOCP generation -----------------------------------------------------------------------------------------------------
 (nl, l) = nodes.Nonleaf(), nodes.Leaf()
 (num_states, num_inputs) = 3, 2
-factor = .05
+factor = .1
 
 # Aw = factor * np.random.randn(num_states)
 # Bw = factor * np.random.randn(num_inputs)
@@ -81,34 +81,34 @@ problem = r.core.RAOCP(scenario_tree=tree) \
     .with_all_nonleaf_constraints(nl_rect) \
     .with_all_leaf_constraints(l_rect)
 
-simple_solver = r.core.Solver(problem_spec=problem, max_iters=2000, tol=1e-3)
-super_solver = r.core.Solver(problem_spec=problem, max_iters=2000, tol=1e-3)
+simple_solver = r.core.Solver(problem_spec=problem, max_outer_iters=2000, tol=1e-3)
+super_solver = r.core.Solver(problem_spec=problem, max_outer_iters=20, tol=1e-3)
 initial_state = np.array([[5], [-6], [-1]])  # np.random.randn(num_states).reshape(-1, 1)
 
 # super chock
-super_chock_status, outer_iters, inner_iters, chock_calls = super_solver.super_chock(initial_state=initial_state)
+super_chock_status, outer_iters, chock_calls = super_solver.super_chock(initial_state=initial_state)
 if super_chock_status == 0:
-    print(f"super chock success: outer = {outer_iters}, inner = {inner_iters}, chock calls = {chock_calls}")
+    print(f"super chock success: outer = {outer_iters}, chock calls = {chock_calls}")
 else:
-    print(f"super chock fail: outer = {outer_iters}, inner = {inner_iters}, chock calls = {chock_calls}")
+    print(f"super chock fail: outer = {outer_iters}, chock calls = {chock_calls}")
 program_done()
 super_solver.plot_residuals("super")
 super_solver.plot_solution("super")
 # super_solver.print_states()
 # super_solver.print_inputs()
 
-# simple chock
-simple_chock_status, iters = simple_solver.simple_chock(initial_state=initial_state)
-if simple_chock_status == 0:
-    print(f"simple chock success at iteration {iters}")
-else:
-    print(f"simple chock fail at iteration {iters}")
-program_done()
-simple_solver.plot_residuals("simple")
-simple_solver.plot_solution("simple")
-# simple_solver.print_states()
-# simple_solver.print_inputs()
+# # simple chock
+# simple_chock_status, iters = simple_solver.simple_chock(initial_state=initial_state)
+# if simple_chock_status == 0:
+#     print(f"simple chock success at iteration {iters}")
+# else:
+#     print(f"simple chock fail at iteration {iters}")
+# program_done()
+# simple_solver.plot_residuals("simple")
+# simple_solver.plot_solution("simple")
+# # simple_solver.print_states()
+# # simple_solver.print_inputs()
 
-# plot comparisons
-for xi in [0, 1, 2]:
-    simple_solver.plot_residual_comparisons(xi, simple_solver, super_solver, "simple", "super")
+# # plot comparisons
+# for xi in [0, 1, 2]:
+#     simple_solver.plot_residual_comparisons(xi, simple_solver, super_solver, "simple", "super")
