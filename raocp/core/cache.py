@@ -20,8 +20,8 @@ class Cache:
         self.__control_size = self.__raocp.control_dynamics_at_node(1).shape[1]
         self.__primal_cache = []
         self.__dual_cache = []
-        self.__old_primal = None
-        self.__old_dual = None
+        self.__template_primal = None
+        self.__template_dual = None
         self.__initial_state = None
 
         # create primal list
@@ -48,8 +48,9 @@ class Cache:
         # populate arrays
         self._offline()
 
-        # update cache with iteration zero
+        # update cache and templates with iteration zero
         self.update_cache()
+        self.update_templates()
 
     # GETTERS ##########################################################################################################
 
@@ -57,13 +58,13 @@ class Cache:
         return self.__raocp
 
     def get_primal(self):
-        return self.__primal.copy()  # , self.__old_primal.copy()
+        return self.__primal.copy()
 
     def get_primal_segments(self):
         return self.__segment_p.copy()
 
     def get_dual(self):
-        return self.__dual.copy()  # , self.__old_dual.copy()
+        return self.__dual.copy()
 
     def get_dual_segments(self):
         return self.__segment_d.copy()
@@ -81,15 +82,14 @@ class Cache:
 
     def cache_initial_state(self, state):
         self.__initial_state = state
-        self.__old_primal[0] = state
         self.__primal_cache[0][0] = state
 
     def set_primal(self, candidate_primal):
-        primal_length = len(self.__old_primal)
+        primal_length = len(self.__template_primal)
         if len(candidate_primal) != primal_length:
             raise Exception("Candidate primal list is wrong length")
         for i in range(primal_length):
-            if candidate_primal[i].shape != self.__old_primal[i].shape:
+            if candidate_primal[i].shape != self.__template_primal[i].shape:
                 all_segments = range(1, 6)
                 for s in reversed(all_segments):
                     if i >= self.__segment_d[s]:
@@ -99,7 +99,7 @@ class Cache:
 
                 raise Exception(f"Candidate primal array shape error in segment {segment} at node {node},\n"
                                 f"candidate shape: {candidate_primal[i].shape},\n"
-                                f"current shape: {self.__old_primal[i].shape}")
+                                f"current shape: {self.__template_primal[i].shape}")
             else:
                 self.__primal[i] = candidate_primal[i].copy()
 
@@ -108,7 +108,7 @@ class Cache:
         if len(candidate_dual) != dual_length:
             raise Exception("Candidate dual list is wrong length")
         for i in range(dual_length):
-            if candidate_dual[i].shape != self.__old_dual[i].shape:
+            if candidate_dual[i].shape != self.__template_dual[i].shape:
                 all_segments = range(1, 15)
                 exclude = {8, 9, 10}
                 active_segments = [num for num in all_segments if num not in exclude]
@@ -120,7 +120,7 @@ class Cache:
 
                 raise Exception(f"Candidate dual array shape error in segment {segment} at node {node},\n"
                                 f"candidate shape: {candidate_dual[i].shape},\n"
-                                f"current shape: {self.__old_dual[i].shape}")
+                                f"current shape: {self.__template_dual[i].shape}")
             else:
                 self.__dual[i] = candidate_dual[i].copy()
 
@@ -188,15 +188,25 @@ class Cache:
 
     def update_cache(self):
         """
-        Update cache list of primal and dual and update 'old' parts to latest list
+        Update cache list of primal and dual
         """
         # primal
         self.__primal_cache.append(self.__primal.copy())
-        self.__old_primal = self.__primal_cache[-1][:]
 
         # dual
         self.__dual_cache.append(self.__dual.copy())
-        self.__old_dual = self.__dual_cache[-1][:]
+
+    # TEMPLATES ########################################################################################################
+
+    def update_templates(self):
+        """
+        Update templates of primal and dual
+        """
+        # primal
+        self.__template_primal = self.__primal.copy()
+
+        # dual
+        self.__template_dual = self.__dual.copy()
 
     # OFFLINE ##########################################################################################################
 

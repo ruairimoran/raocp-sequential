@@ -86,7 +86,7 @@ initial_state = np.array([[5], [-6], [-1]])
 # write = create new solution, read = use last solution
 read, write = 'rb', 'wb'
 filename = ['simple_solver.pk', 'super_solver.pk', 'resid_solver.pk']
-command = [read, read, read]
+command = [write, write, write]
 
 
 # simple chock
