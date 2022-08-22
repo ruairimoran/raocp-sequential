@@ -57,16 +57,19 @@ class Cache:
         return self.__raocp
 
     def get_primal(self):
-        return self.__primal.copy(), self.__old_primal.copy()
+        return self.__primal.copy()  # , self.__old_primal.copy()
 
     def get_primal_segments(self):
         return self.__segment_p.copy()
 
     def get_dual(self):
-        return self.__dual.copy(), self.__old_dual.copy()
+        return self.__dual.copy()  # , self.__old_dual.copy()
 
     def get_dual_segments(self):
         return self.__segment_d.copy()
+
+    def get_primal_and_dual(self):
+        return self.__primal.copy(), self.__dual.copy()
 
     def get_kernel_constraint_matrices(self):
         return self.__kernel_constraint_matrix.copy()
@@ -245,7 +248,7 @@ class Cache:
 
     # proximal of f ----------------------------------------------------------------------------------------------------
 
-    def proximal_of_f(self, solver_parameter):
+    def proximal_of_primal(self, solver_parameter):
         self.proximal_of_relaxation_s_at_stage_zero(solver_parameter)
         self.project_on_dynamics()
         self.project_on_kernel()
@@ -318,7 +321,7 @@ class Cache:
 
     # proximal of g conjugate ------------------------------------------------------------------------------------------
 
-    def proximal_of_g_conjugate(self, solver_parameter):
+    def proximal_of_dual(self, solver_parameter):
         self.modify_dual(solver_parameter)
         self.add_halves()
         modified_dual = self.__dual.copy()  # take copy of modified dual

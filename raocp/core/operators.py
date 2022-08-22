@@ -13,8 +13,7 @@ class Operator:
         self.__num_nodes = self.__raocp.tree.num_nodes
         self.__segment_p = cache.get_primal_segments()
         self.__segment_d = cache.get_dual_segments()
-        _, self.__template_p = cache.get_primal()
-        _, self.__template_d = cache.get_dual()
+        self.__template_p, self.__template_d = cache.get_primal_and_dual()
 
     def ell(self, input_primal, output_dual):
         # create sections for ease of access
@@ -23,7 +22,6 @@ class Operator:
         dual_risk_y = input_primal[self.__segment_p[3]: self.__segment_p[4]]
         relaxation_tau = input_primal[self.__segment_p[4]: self.__segment_p[5]]
         relaxation_s = input_primal[self.__segment_p[5]: self.__segment_p[6]]
-
         for i in range(self.__num_nonleaf_nodes):
             children_of_i = self.__raocp.tree.children_of(i)
             output_dual[self.__segment_d[1] + i] = dual_risk_y[i]

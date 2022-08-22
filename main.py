@@ -1,4 +1,5 @@
 import winsound
+import pickle
 import raocp as r
 import numpy as np
 import raocp.core.nodes as nodes
@@ -32,13 +33,8 @@ tree = r.core.MarkovChainScenarioTreeFactory(transition_prob=p,
 # RAOCP generation -----------------------------------------------------------------------------------------------------
 (nl, l) = nodes.Nonleaf(), nodes.Leaf()
 (num_states, num_inputs) = 3, 2
-factor = .1
+factor = .05
 
-# Aw = factor * np.random.randn(num_states)
-# Bw = factor * np.random.randn(num_inputs)
-# for i in range(num_states - 1):
-#     Aw = np.vstack((Aw, factor * np.random.randn(num_states)))
-#     Bw = np.vstack((Bw, factor * np.random.randn(num_inputs)))
 Aw = factor * np.array([[1, 2, 1], [1, 1, 2], [2, 1, 1]])
 Bw = factor * np.array([[1, 0], [1, 2], [0, 2]])
 As = [0.5 * Aw, Aw, -0.5 * Aw]  # n x n matrices
@@ -81,34 +77,79 @@ problem = r.core.RAOCP(scenario_tree=tree) \
     .with_all_nonleaf_constraints(nl_rect) \
     .with_all_leaf_constraints(l_rect)
 
-simple_solver = r.core.Solver(problem_spec=problem, max_outer_iters=2000, tol=1e-3)
-super_solver = r.core.Solver(problem_spec=problem, max_outer_iters=20, tol=1e-3)
-initial_state = np.array([[5], [-6], [-1]])  # np.random.randn(num_states).reshape(-1, 1)
+simple_solver = r.core.Solver(problem_spec=problem, max_outer_iters=5000, tol=1e-3)
+super_solver = r.core.Solver(problem_spec=problem, max_outer_iters=5000, tol=1e-3)
+resid_solver = r.core.Solver(problem_spec=problem, max_outer_iters=5000, tol=1e-3)
+initial_state = np.array([[5], [-6], [-1]])
+
+
+# write = create new solution, read = use last solution
+read, write = 'rb', 'wb'
+filename = ['simple_solver.pk', 'super_solver.pk', 'resid_solver.pk']
+command = [read, read, read]
+
+
+# simple chock
+if command[0] == write:
+    simple_chock_status, iters = simple_solver.simple_chock(initial_state=initial_state)
+    if simple_chock_status == 0:
+        print(f"simple chock success at iteration {iters}")
+    else:
+        print(f"simple chock fail at iteration {iters}")
+    program_done()
+    # simple_solver.plot_residuals("simple")
+    # simple_solver.plot_solution("simple")
+    # simple_solver.print_states()
+    # simple_solver.print_inputs()
+
 
 # super chock
-super_chock_status, outer_iters, chock_calls = super_solver.super_chock(initial_state=initial_state)
-if super_chock_status == 0:
-    print(f"super chock success: outer = {outer_iters}, chock calls = {chock_calls}")
-else:
-    print(f"super chock fail: outer = {outer_iters}, chock calls = {chock_calls}")
-program_done()
-super_solver.plot_residuals("super")
-super_solver.plot_solution("super")
-# super_solver.print_states()
-# super_solver.print_inputs()
+if command[1] == write:
+    super_chock_status, outer_iters, chock_calls = super_solver.super_chock(initial_state=initial_state)
+    if super_chock_status == 0:
+        print(f"super chock success: outer = {outer_iters}, chock calls = {chock_calls}")
+    else:
+        print(f"super chock fail: outer = {outer_iters}, chock calls = {chock_calls}")
+    program_done()
+    # super_solver.plot_residuals("super")
+    # super_solver.plot_solution("super")
+    # super_solver.print_states()
+    # super_solver.print_inputs()
 
-# # simple chock
-# simple_chock_status, iters = simple_solver.simple_chock(initial_state=initial_state)
-# if simple_chock_status == 0:
-#     print(f"simple chock success at iteration {iters}")
-# else:
-#     print(f"simple chock fail at iteration {iters}")
-# program_done()
-# simple_solver.plot_residuals("simple")
-# simple_solver.plot_solution("simple")
-# # simple_solver.print_states()
-# # simple_solver.print_inputs()
 
-# # plot comparisons
-# for xi in [0, 1, 2]:
-#     simple_solver.plot_residual_comparisons(xi, simple_solver, super_solver, "simple", "super")
+# resid chock
+if command[2] == write:
+    resid_chock_status, outer_iters, chock_calls = resid_solver.super_chock(initial_state=initial_state,
+                                                                            andersons_setup_iterations=1000)
+    if resid_chock_status == 0:
+        print(f"resid chock success: outer = {outer_iters}, chock calls = {chock_calls}")
+    else:
+        print(f"resid chock fail: outer = {outer_iters}, chock calls = {chock_calls}")
+    program_done()
+    # super_solver.plot_residuals("super")
+    # super_solver.plot_solution("super")
+    # super_solver.print_states()
+    # super_solver.print_inputs()
+
+
+# use pickle to store solved problems instead of rerunning
+with open(filename[0], command[0]) as fi:
+    if command[0] == write:
+        pickle.dump(simple_solver, fi)
+    else:
+        simple_solver = pickle.load(fi)
+with open(filename[1], command[1]) as fi:
+    if command[1] == write:
+        pickle.dump(super_solver, fi)
+    else:
+        super_solver = pickle.load(fi)
+with open(filename[2], command[2]) as fi:
+    if command[2] == write:
+        pickle.dump(resid_solver, fi)
+    else:
+        resid_solver = pickle.load(fi)
+
+
+# plot comparisons
+for xi in [0]:  # , 1, 2]:
+    simple_solver.plot_residual_comparisons(xi, simple_solver, super_solver, resid_solver, "simple", "super", "resid")
