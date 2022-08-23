@@ -1,8 +1,10 @@
 import numpy as np
 import scipy.optimize
+from scipy.sparse.linalg import LinearOperator, eigs
 import raocp.core.constraints.cones as cones
 import raocp.core.raocp_spec as ps
 import raocp.core.risks as risks
+import raocp.core.operators as core_ops
 
 
 class Cache:
@@ -23,6 +25,10 @@ class Cache:
         self.__template_primal = None
         self.__template_dual = None
         self.__initial_state = None
+        self.__parameter_1 = None
+        self.__parameter_2 = None
+        self.__error = [np.zeros(1)] * 3
+        self.__error_cache = None
 
         # create primal list
         self._create_primal()
@@ -404,3 +410,141 @@ class Cache:
 
     def modify_projection(self, solver_parameter, modified_dual):
         self.__dual = [solver_parameter * (a_i - b_i) for a_i, b_i in zip(modified_dual, self.__dual)]
+
+    # CHAMBOLLE-POCK OPERATOR ##########################################################################################
+
+    def chock_operator(self, linear_operators: core_ops.Operators, current_prim, current_dual,
+                       parameter_prim, parameter_dual):
+        # run primal part of algorithm -----------------------------------------------------------
+        # get memory space for ell_transpose_dual
+        ell_transpose_dual = self.get_primal()
+        # operate L transpose on dual and store in ell_transpose_dual
+        linear_operators.ell_transpose(current_dual, ell_transpose_dual)
+        # old primal minus (alpha1 times ell_transpose_dual)
+        new_primal = [a_i - b_i for a_i, b_i in zip(current_prim, [j * parameter_prim
+                                                                   for j in ell_transpose_dual])]
+        self.set_primal(new_primal)
+        self.proximal_of_primal(parameter_prim)
+        # run dual part of algorithm -------------------------------------------------------------
+        mod_prim_ = self.get_primal()
+        # get memory space for ell_transpose_dual
+        ell_primal = self.get_dual()
+        # two times new primal minus old primal
+        modified_primal = [a_i - b_i for a_i, b_i in zip([j * 2 for j in mod_prim_], current_prim)]
+        # operate L on modified primal
+        linear_operators.ell(modified_primal, ell_primal)
+        # old dual plus (gamma times ell_primal)
+        new_dual = [a_i + b_i for a_i, b_i in zip(current_dual, [j * parameter_dual
+                                                                 for j in ell_primal])]
+        self.set_dual(new_dual)
+        self.proximal_of_dual(parameter_dual)
+        # get new parts
+        new_prim_, new_dual_ = self.get_primal_and_dual()
+        return new_prim_, new_dual_
+
+    # HELPER FUNCTIONS #################################################################################################
+
+    def get_parameters(self, linear_operators):
+        # find alpha_1 and _2
+        prim, dual = self.get_primal_and_dual()
+        size_prim = np.vstack(prim).size
+        size_dual = np.vstack(dual).size
+        ell = LinearOperator(dtype=None, shape=(size_dual, size_prim),
+                             matvec=linear_operators.linop_ell)
+        ell_transpose = LinearOperator(dtype=None, shape=(size_prim, size_dual),
+                                       matvec=linear_operators.linop_ell_transpose)
+        ell_transpose_ell = ell_transpose * ell
+        eigens, _ = eigs(ell_transpose_ell)
+        ell_norm = np.real(max(eigens))
+        one_over_norm = 0.999 / ell_norm
+        self.__parameter_1 = one_over_norm
+        self.__parameter_2 = one_over_norm
+        return self.__parameter_1, self.__parameter_2
+
+    @staticmethod
+    def parts_to_vector(prim_, dual_):
+        return np.vstack((np.vstack(prim_), np.vstack(dual_)))
+
+    def vector_to_parts(self, vector_):
+        prim_, dual_ = self.get_primal_and_dual()
+        index = 0
+        for i in range(len(prim_)):
+            size_ = prim_[i].size
+            prim_[i] = np.array(vector_[index: index + size_]).reshape(-1, 1)
+            index += size_
+
+        for i in range(len(dual_)):
+            size_ = dual_[i].size
+            dual_[i] = np.array(vector_[index: index + size_]).reshape(-1, 1)
+            index += size_
+
+        return prim_, dual_
+
+    def get_chock_norm(self, linear_operators, vector):
+        norm = np.sqrt(self.get_chock_inner_prod(linear_operators, vector, vector))
+        return norm
+
+    def get_chock_norm_squared(self, linear_operators, vector):
+        norm = self.get_chock_inner_prod(linear_operators, vector, vector)
+        return norm
+
+    def get_chock_inner_prod(self, linear_operators, vector_a, vector_b):
+        if vector_a.shape[1] != 1 or vector_b.shape[1] != 1:
+            raise Exception("non column vectors provided to inner product")
+        inner = vector_a.T @ self.get_chock_inner_prod_matrix(linear_operators, vector_b)
+        return inner[0]
+
+    def get_chock_inner_prod_matrix(self, linear_operators, vector):
+        prim, dual = self.vector_to_parts(vector)
+        ell_transpose_dual, ell_prim = self.get_primal_and_dual()
+        linear_operators.ell_transpose(dual, ell_transpose_dual)
+        linear_operators.ell(prim, ell_prim)
+        modified_prim = [a_i - (self.__parameter_1 * b_i) for a_i, b_i in zip(prim, ell_transpose_dual)]
+        modified_dual = [a_i - (self.__parameter_2 * b_i) for a_i, b_i in zip(dual, ell_prim)]
+        return modified_prim, modified_dual
+
+    # ERROR HANDLING ###################################################################################################
+    def get_current_error(self, new_prim_, old_prim_, new_dual_, old_dual_):
+        # calculate error
+        xi_0, xi_1, xi_2 = self.calculate_chock_errors(new_prim_, old_prim_, new_dual_, old_dual_)
+        xi = [xi_0, xi_1, xi_2]
+        for i in range(3):
+            inf_norm_xi = [np.linalg.norm(a_i, ord=np.inf) for a_i in xi[i]]
+            self.__error[i] = np.linalg.norm(inf_norm_xi, np.inf)
+
+        return max(self.__error)
+
+    def calculate_chock_errors(self, new_prim_, old_prim_, new_dual_, old_dual_):
+        # in this function, p = primal and d = dual
+        p_new = new_prim_
+        p = old_prim_
+        d_new = new_dual_
+        d = old_dual_
+
+        # error 1
+        p_minus_p_new = [a_i - b_i for a_i, b_i in zip(p, p_new)]
+        p_minus_p_new_over_alpha1 = [a_i / self.__parameter_1 for a_i in p_minus_p_new]
+        d_minus_d_new = [a_i - b_i for a_i, b_i in zip(d, d_new)]
+        ell_transpose_d_minus_d_new = self.__cache.get_primal()  # get memory position
+        self.__operator.ell_transpose(d_minus_d_new, ell_transpose_d_minus_d_new)
+        xi_1 = [a_i - b_i for a_i, b_i in zip(p_minus_p_new_over_alpha1, ell_transpose_d_minus_d_new)]
+
+        # error 2
+        d_minus_d_new_over_alpha2 = [a_i / self.__parameter_2 for a_i in d_minus_d_new]
+        p_new_minus_p = [a_i - b_i for a_i, b_i in zip(p_new, p)]
+        ell_p_new_minus_p = self.__cache.get_dual()  # get memory position
+        self.__operator.ell(p_new_minus_p, ell_p_new_minus_p)
+        xi_2 = [a_i + b_i for a_i, b_i in zip(d_minus_d_new_over_alpha2, ell_p_new_minus_p)]
+
+        # error 0
+        ell_transpose_error2 = self.__cache.get_primal()  # get memory position
+        self.__operator.ell_transpose(xi_2, ell_transpose_error2)
+        xi_0 = [a_i + b_i for a_i, b_i in zip(xi_1, ell_transpose_error2)]
+
+        return xi_0, xi_1, xi_2
+
+    def cache_errors(self, i_):
+        if i_ == 0:
+            self.__error_cache = np.array(self.__error)
+        else:
+            self.__error_cache = np.vstack((self.__error_cache, np.array(self.__error)))

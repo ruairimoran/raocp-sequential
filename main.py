@@ -91,7 +91,7 @@ command = [write, write, write]
 
 # simple chock
 if command[0] == write:
-    simple_chock_status, iters = simple_solver.simple_chock(initial_state=initial_state)
+    simple_chock_status, iters = simple_solver.chock(initial_state=initial_state)
     if simple_chock_status == 0:
         print(f"simple chock success at iteration {iters}")
     else:

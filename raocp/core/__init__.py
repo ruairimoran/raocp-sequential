@@ -7,4 +7,8 @@ from .risks import *
 from .operators import *
 from .cache import *
 from .solver import *
+from .chock import *
+from .spock import *
+from .directions import *
+from .printer import *
 import raocp.core.constraints
