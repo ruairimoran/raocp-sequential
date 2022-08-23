@@ -7,6 +7,7 @@ import raocp.core.dynamics as dynamics
 import raocp.core.costs as costs
 import raocp.core.risks as risks
 import raocp.core.constraints.rectangle as rectangle
+import raocp.core.printer as core_printer
 
 
 def program_done():
@@ -77,25 +78,29 @@ problem = r.core.RAOCP(scenario_tree=tree) \
     .with_all_nonleaf_constraints(nl_rect) \
     .with_all_leaf_constraints(l_rect)
 
-simple_solver = r.core.Solver(problem_spec=problem, max_outer_iters=5000, tol=1e-3)
-super_solver = r.core.Solver(problem_spec=problem, max_outer_iters=5000, tol=1e-3)
-resid_solver = r.core.Solver(problem_spec=problem, max_outer_iters=5000, tol=1e-3)
+simple_solver = r.core.Solver(problem_spec=problem, max_iters=5000, tol=1e-3)
+super_with_resid_solver = r.core.Solver(problem_spec=problem, max_iters=5000, tol=1e-3)\
+    .with_residuals_direction()\
+    .with_spock()
+super_with_ander_solver = r.core.Solver(problem_spec=problem, max_iters=5000, tol=1e-3)\
+    .with_andersons_direction()\
+    .with_spock()
 initial_state = np.array([[5], [-6], [-1]])
 
 
 # write = create new solution, read = use last solution
 read, write = 'rb', 'wb'
-filename = ['simple_solver.pk', 'super_solver.pk', 'resid_solver.pk']
-command = [write, write, write]
+filename = ['simple_solver.pk', 'resid_solver.pk', 'super_solver.pk']
+command = [read, read, read]
 
 
 # simple chock
 if command[0] == write:
-    simple_chock_status, iters = simple_solver.chock(initial_state=initial_state)
-    if simple_chock_status == 0:
-        print(f"simple chock success at iteration {iters}")
+    simple_status, iters, chock_calls = simple_solver.run(initial_state=initial_state)
+    if simple_status == 0:
+        print(f"simple solver success at iteration {iters}")
     else:
-        print(f"simple chock fail at iteration {iters}")
+        print(f"simple solver fail at iteration {iters}")
     program_done()
     # simple_solver.plot_residuals("simple")
     # simple_solver.plot_solution("simple")
@@ -103,13 +108,13 @@ if command[0] == write:
     # simple_solver.print_inputs()
 
 
-# super chock
+# resid chock
 if command[1] == write:
-    super_chock_status, outer_iters, chock_calls = super_solver.super_chock(initial_state=initial_state)
-    if super_chock_status == 0:
-        print(f"super chock success: outer = {outer_iters}, chock calls = {chock_calls}")
+    resid_status, outer_iters, chock_calls = super_with_resid_solver.run(initial_state=initial_state)
+    if resid_status == 0:
+        print(f"resid solver success: outer = {outer_iters}, chock calls = {chock_calls}")
     else:
-        print(f"super chock fail: outer = {outer_iters}, chock calls = {chock_calls}")
+        print(f"resid solver fail: outer = {outer_iters}, chock calls = {chock_calls}")
     program_done()
     # super_solver.plot_residuals("super")
     # super_solver.plot_solution("super")
@@ -117,14 +122,13 @@ if command[1] == write:
     # super_solver.print_inputs()
 
 
-# resid chock
+# super chock
 if command[2] == write:
-    resid_chock_status, outer_iters, chock_calls = resid_solver.super_chock(initial_state=initial_state,
-                                                                            andersons_setup_iterations=1000)
-    if resid_chock_status == 0:
-        print(f"resid chock success: outer = {outer_iters}, chock calls = {chock_calls}")
+    ander_status, outer_iters, chock_calls = super_with_ander_solver.run(initial_state=initial_state)
+    if ander_status == 0:
+        print(f"ander solver success: outer = {outer_iters}, chock calls = {chock_calls}")
     else:
-        print(f"resid chock fail: outer = {outer_iters}, chock calls = {chock_calls}")
+        print(f"ander solver fail: outer = {outer_iters}, chock calls = {chock_calls}")
     program_done()
     # super_solver.plot_residuals("super")
     # super_solver.plot_solution("super")
@@ -140,16 +144,20 @@ with open(filename[0], command[0]) as fi:
         simple_solver = pickle.load(fi)
 with open(filename[1], command[1]) as fi:
     if command[1] == write:
-        pickle.dump(super_solver, fi)
+        pickle.dump(super_with_resid_solver, fi)
     else:
-        super_solver = pickle.load(fi)
+        super_with_resid_solver = pickle.load(fi)
 with open(filename[2], command[2]) as fi:
     if command[2] == write:
-        pickle.dump(resid_solver, fi)
+        pickle.dump(super_with_ander_solver, fi)
     else:
-        resid_solver = pickle.load(fi)
+        super_with_ander_solver = pickle.load(fi)
 
 
 # plot comparisons
 for xi in [0]:  # , 1, 2]:
-    simple_solver.plot_residual_comparisons(xi, simple_solver, super_solver, resid_solver, "simple", "super", "resid")
+    core_printer.plot_residual_comparisons(xi,
+                                           simple_solver.get_cache,
+                                           super_with_resid_solver.get_cache,
+                                           super_with_ander_solver.get_cache,
+                                           "simple", "resid", "ander")

@@ -1,7 +1,21 @@
 import numpy as np
 
 
-class Residual:
+class Direction:
+    """
+    Base class for storing direction type
+    """
+
+    @property
+    def is_residuals(self):
+        return False
+
+    @property
+    def is_andersons(self):
+        return False
+
+
+class Residuals(Direction):
     """
     Class for using the negative residual as a direction of descent
     """
@@ -9,13 +23,16 @@ class Residual:
     def __init__(self):
         self.__is_residuals = True
 
+    @property
     def is_residuals(self):
-        return self.__is_residuals
+        return True
 
-    def
+    @staticmethod
+    def get_direction(resid_zen):
+        return -resid_zen
 
 
-class Andersons:
+class Andersons(Direction):
     """
     Class for using Anderson's direction of descent
     """
@@ -28,6 +45,10 @@ class Andersons:
         self.__andys_resid_diff = []
         self.__andys_point_diff_matrix = None
         self.__andys_resid_diff_matrix = None
+
+    @property
+    def is_andersons(self):
+        return True
 
     def run_setup(self, zen_kplus1_, resid_zen_kplus1_, iplus1_):
         i_ = iplus1_ - 1

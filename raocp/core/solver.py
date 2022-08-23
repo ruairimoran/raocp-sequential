@@ -1,4 +1,3 @@
-import numpy as np
 import raocp.core.cache as cache
 import raocp.core.operators as ops
 import raocp.core.raocp_spec as spec
@@ -16,28 +15,34 @@ class Solver:
         self.__raocp = problem_spec
         self.__cache = cache.Cache(self.__raocp)
         self.__operator = ops.Operator(self.__cache)
+        self.__cache.set_linear_operator(self.__operator)
         self.__tol = tol
         self.__max_iters = max_iters
+        self.__max_outer_iters = None
         self.__solver = None
         self.__direction = None
         self.__do_supermann = False
-        self.__do_residuals = False
-        self.__do_andersons = False
 
     # BUILDERS #########################################################################################################
-        
-    def with_spock(self, max_outer_iters=5000, max_inner_iters=50, c0=0.99, c1=0.99, c2=0.99, 
-                   beta=0.5, sigma=0.1, lamda=1.95, alpha=0.5):
-        self.__solver = core_spock.Spock(max_outer_iters, max_inner_iters, c0, c1, c2, beta, sigma, lamda, alpha)
-        self.__do_supermann = True
-        
+
     def with_residuals_direction(self):
         self.__direction = core_directions.Residuals()
-        self.__do_residuals = True
-        
+        return self
+
     def with_andersons_direction(self, memory_size=5):
         self.__direction = core_directions.Andersons(memory_size)
-        self.__do_andersons = True
+        return self
+
+    def with_spock(self, max_outer_iters=5000, max_inner_iters=50, c0=0.99, c1=0.99, c2=0.99, 
+                   beta=0.5, sigma=0.1, lamda=1.95, alpha=0.5):
+        if self.__direction is None:
+            raise Exception("'with_..._direction' must be given before 'with_spock")
+        self.__solver = core_spock.Spock(self.__cache, self.__direction, self.__tol,
+                                         max_outer_iters, max_inner_iters,
+                                         c0, c1, c2, beta, sigma, lamda, alpha)
+        self.__do_supermann = True
+        self.__max_outer_iters = max_outer_iters
+        return self
 
     # GETTERS ##########################################################################################################
         
@@ -45,23 +50,14 @@ class Solver:
     def get_cache(self):
         return self.__cache
 
-    @property
-    def get_error_cache(self):
-        return self.__error_cache
-
     # RUN ##############################################################################################################
     
     def run(self, initial_state):
         if self.__do_supermann:
-            self.__solver.run(direction=self.__direction)
+            iters, chock_op_calls = self.__solver.run(initial_state)
+            status = 0 if iters < self.__max_outer_iters else 1
         else:
-            self.__solver = core_chock.Chock(self.__cache, self.__max_iters)
-            self.__solver.run()
-
-    def check_convergence(self, current_iter_):
-        if current_iter_ < self.__max_outer_iters:
-            return 0  # converged
-        elif current_iter_ >= self.__max_outer_iters:
-            return 1  # not converged
-        else:
-            raise Exception("Iteration error in solver")
+            self.__solver = core_chock.Chock(self.__cache, self.__tol, self.__max_iters)
+            iters, chock_op_calls = self.__solver.run(initial_state)
+            status = 0 if iters < self.__max_iters else 1
+        return status, iters, chock_op_calls

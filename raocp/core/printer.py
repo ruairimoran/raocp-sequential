@@ -4,6 +4,21 @@ import matplotlib.pyplot as plt
 import tikzplotlib as tikz
 
 
+def plot_residual_comparisons(xi, cache1, cache2, cache3, solver1_name, solver2_name, solver3_name):
+    width = 2
+    error1 = cache1.get_error_cache()
+    error2 = cache2.get_error_cache()
+    error3 = cache3.get_error_cache()
+    plt.semilogy(error1[:, xi], linewidth=width, linestyle="solid")
+    plt.semilogy(error2[:, xi], linewidth=width, linestyle="solid")
+    plt.semilogy(error3[:, xi], linewidth=width, linestyle="solid")
+    plt.title(f"comparison of {solver1_name}, {solver2_name} and {solver3_name} solvers xi_{xi} residual value")
+    plt.ylabel(r"log(residual value)", fontsize=12)
+    plt.xlabel(r"iteration", fontsize=12)
+    plt.legend((f"{solver1_name}", f"{solver2_name}", f"{solver3_name}"))
+    plt.show()
+
+
 class Printer:
     """
     Printer and plotter for raocp solutions
@@ -12,7 +27,7 @@ class Printer:
     def __init__(self, solver: core_solver.Solver):
         self.__solver = solver
         self.__cache = solver.get_cache()
-        self.__error_cache = solver.get_error_cache()
+        self.__error_cache = self.__cache.get_error_cache()
 
     def print_states(self):
         primal = self.__cache.get_primal()
@@ -38,18 +53,6 @@ class Printer:
         plt.xlabel(r"iteration", fontsize=12)
         plt.legend(("xi_0", "xi_1", "xi_2"))
         tikz.save('4-3-residuals.tex')
-        plt.show()
-
-    @staticmethod
-    def plot_residual_comparisons(xi, solver1, solver2, solver3, solver1_name, solver2_name, solver3_name):
-        width = 2
-        plt.semilogy(solver1.__error_cache[:, xi], linewidth=width, linestyle="solid")
-        plt.semilogy(solver2.__error_cache[:, xi], linewidth=width, linestyle="solid")
-        plt.semilogy(solver3.__error_cache[:, xi], linewidth=width, linestyle="solid")
-        plt.title(f"comparison of {solver1_name}, {solver2_name} and {solver3_name} solvers xi_{xi} residual value")
-        plt.ylabel(r"log(residual value)", fontsize=12)
-        plt.xlabel(r"iteration", fontsize=12)
-        plt.legend((f"{solver1_name}", f"{solver2_name}", f"-{solver3_name}"))
         plt.show()
 
     def plot_solution(self, solver):
