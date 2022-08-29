@@ -30,6 +30,8 @@ class Cache:
         self.__linear_operator = None
         self.__error = [np.zeros(1)] * 3
         self.__error_cache = None
+        self.__old_ell_prim = None
+        self.__old_ell_t_dual = None
 
         # create primal list
         self._create_primal()
@@ -446,7 +448,7 @@ class Cache:
         self.proximal_of_dual(self.__parameter_2)
         # get new parts
         new_prim_, new_dual_ = self.get_primal_and_dual()
-        return new_prim_, new_dual_
+        return new_prim_, new_dual_, ell_primal, ell_transpose_dual
 
     # HELPER FUNCTIONS #################################################################################################
 
@@ -510,47 +512,48 @@ class Cache:
         return modified_vector
 
     # ERROR HANDLING ###################################################################################################
-    def get_current_error(self, new_prim_, old_prim_, new_dual_, old_dual_):
+    def get_current_error(self, new_prim_, old_prim_, new_dual_, old_dual_, ell_prim_, ell_t_dual_):
         # calculate error
-        xi_0, xi_1, xi_2 = self.calculate_chock_errors(new_prim_, old_prim_, new_dual_, old_dual_)
-        xi = [xi_0, xi_1, xi_2]
-        for i in range(3):
-            inf_norm_xi = [np.linalg.norm(a_i, ord=np.inf) for a_i in xi[i]]
-            self.__error[i] = np.linalg.norm(inf_norm_xi, np.inf)
+        xi_0, xi_1, xi_2 = self.calculate_chock_errors(new_prim_, old_prim_, new_dual_, old_dual_,
+                                                       ell_prim_, ell_t_dual_)
+        if xi_0 is not None:
+            xi = [xi_0, xi_1, xi_2]
+            for i in range(3):
+                inf_norm_xi = [np.linalg.norm(a_i, ord=np.inf) for a_i in xi[i]]
+                self.__error[i] = np.linalg.norm(inf_norm_xi, np.inf)
 
-        return max(self.__error)
+            return max(self.__error)
+        else:
+            return np.inf
 
-    def calculate_chock_errors(self, new_prim_, old_prim_, new_dual_, old_dual_):
+    def calculate_chock_errors(self, new_prim_, old_prim_, new_dual_, old_dual_, ell_prim_, ell_t_dual_):
         # in this function, p = primal and d = dual
-        p_new = new_prim_
-        p = old_prim_
-        d_new = new_dual_
-        d = old_dual_
-
-        # error 1
-        p_minus_p_new = [a_i - b_i for a_i, b_i in zip(p, p_new)]
-        p_minus_p_new_over_alpha1 = [a_i / self.__parameter_1 for a_i in p_minus_p_new]
-        d_minus_d_new = [a_i - b_i for a_i, b_i in zip(d, d_new)]
-        ell_transpose_d_minus_d_new = self.get_primal()  # get memory position
-        self.__linear_operator.ell_transpose(d_minus_d_new, ell_transpose_d_minus_d_new)
-        xi_1 = [a_i - b_i for a_i, b_i in zip(p_minus_p_new_over_alpha1, ell_transpose_d_minus_d_new)]
-
-        # error 2
-        d_minus_d_new_over_alpha2 = [a_i / self.__parameter_2 for a_i in d_minus_d_new]
-        p_new_minus_p = [a_i - b_i for a_i, b_i in zip(p_new, p)]
-        ell_p_new_minus_p = self.get_dual()  # get memory position
-        self.__linear_operator.ell(p_new_minus_p, ell_p_new_minus_p)
-        xi_2 = [a_i + b_i for a_i, b_i in zip(d_minus_d_new_over_alpha2, ell_p_new_minus_p)]
-
-        # error 0
-        ell_transpose_error2 = self.get_primal()  # get memory position
-        self.__linear_operator.ell_transpose(xi_2, ell_transpose_error2)
-        xi_0 = [a_i + b_i for a_i, b_i in zip(xi_1, ell_transpose_error2)]
-
+        if self.__old_ell_prim is not None and self.__old_ell_t_dual is not None:
+            # error 1
+            p_minus_p_new_over_alpha1 = [(a_i - b_i) / self.__parameter_1 for a_i, b_i in zip(old_prim_, new_prim_)]
+            ell_transpose_d_minus_d_new = [a_i - b_i for a_i, b_i in zip(self.__old_ell_t_dual, ell_t_dual_)]
+            xi_1 = [a_i - b_i for a_i, b_i in zip(p_minus_p_new_over_alpha1, ell_transpose_d_minus_d_new)]
+            # error 2
+            d_minus_d_new_over_alpha2 = [(a_i - b_i) / self.__parameter_2 for a_i, b_i in zip(old_dual_, new_dual_)]
+            ell_p_new_minus_p = [a_i - b_i for a_i, b_i in zip(ell_prim_, self.__old_ell_prim)]
+            xi_2 = [a_i + b_i for a_i, b_i in zip(d_minus_d_new_over_alpha2, ell_p_new_minus_p)]
+            # error 0
+            ell_transpose_error2 = self.get_primal()  # get memory position
+            self.__linear_operator.ell_transpose(xi_2, ell_transpose_error2)
+            xi_0 = [a_i + b_i for a_i, b_i in zip(xi_1, ell_transpose_error2)]
+            # reset
+            self.__old_ell_prim = ell_prim_
+            self.__old_ell_t_dual = ell_t_dual_
+        else:
+            self.__old_ell_prim = ell_prim_
+            self.__old_ell_t_dual = ell_t_dual_
+            xi_0 = None
+            xi_1 = None
+            xi_2 = None
         return xi_0, xi_1, xi_2
 
     def cache_errors(self, i_):
         if i_ == 0:
-            self.__error_cache = np.array(self.__error)
+            self.__error_cache = self.__error
         else:
             self.__error_cache = np.vstack((self.__error_cache, np.array(self.__error)))

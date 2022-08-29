@@ -55,13 +55,14 @@ class Spock:
             self.__cache.set_dual(accepted_dual)
             self.__cache.update_cache()
             # step 1
-            candidate_zen_kplus1 = self.get_new_zen(zen_k)
+            candidate_zen_kplus1, ell_prim_kplus1, ell_t_dual_kplus1 = self.get_new_zen(zen_k)
             resid_zen_k = self.get_residual(zen_k, candidate_zen_kplus1)
             norm_resid_zen_k = self.__cache.get_chock_norm(resid_zen_k)
             # check termination criteria
             old_prim, old_dual = self.__cache.vector_to_parts(zen_k)
             new_prim, new_dual = self.__cache.vector_to_parts(candidate_zen_kplus1)
-            current_error = self.__cache.get_current_error(new_prim, old_prim, new_dual, old_dual)
+            current_error = self.__cache.get_current_error(new_prim, old_prim, new_dual, old_dual,
+                                                           ell_prim_kplus1, ell_t_dual_kplus1)
             self.__cache.cache_errors(i)
             if current_error <= self.__tol:
                 break
@@ -125,14 +126,14 @@ class Spock:
 
     def get_new_zen(self, vector_x_k_):
         prim_k_, dual_k_ = self.__cache.vector_to_parts(vector_x_k_)
-        prim_kplus1_, dual_kplus1_ = self.__cache.chock_operator(prim_k_, dual_k_)
+        prim_kplus1_, dual_kplus1_, ell_prim_, ell_t_dual_ = self.__cache.chock_operator(prim_k_, dual_k_)
         self.__counter_chock_operator = self.__counter_chock_operator + 1
         vector_x_kplus1_ = self.__cache.parts_to_vector(prim_kplus1_, dual_kplus1_)
-        return vector_x_kplus1_
+        return vector_x_kplus1_, ell_prim_, ell_t_dual_
 
     def get_new_w(self, vector_):
         # for speeding up new w by making chock operator a function of tau
-        new_w_ = self.get_new_zen(vector_)
+        new_w_, _, _ = self.get_new_zen(vector_)
         return new_w_
 
     @staticmethod

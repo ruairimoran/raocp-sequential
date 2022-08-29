@@ -22,11 +22,11 @@ class Chock:
         tick = time.perf_counter()
         for i in range(self.__max_iters):
             old_prim, old_dual = self.__cache.get_primal_and_dual()
-            new_prim, new_dual = self.__cache.chock_operator(old_prim, old_dual)
+            new_prim, new_dual, ell_prim, ell_t_dual = self.__cache.chock_operator(old_prim, old_dual)
             self.__counter_chock_operator = self.__counter_chock_operator + 1
 
             # calculate and cache current error
-            current_error = self.__cache.get_current_error(new_prim, old_prim, new_dual, old_dual)
+            current_error = self.__cache.get_current_error(new_prim, old_prim, new_dual, old_dual, ell_prim, ell_t_dual)
             self.__cache.cache_errors(i)
 
             # cache variables
