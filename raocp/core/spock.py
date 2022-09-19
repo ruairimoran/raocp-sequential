@@ -1,7 +1,6 @@
 import time
 import numpy as np
 import raocp.core.cache as core_cache
-import raocp.core.operators as core_operators
 
 
 class Spock:

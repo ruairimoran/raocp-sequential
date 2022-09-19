@@ -22,7 +22,7 @@ p = np.array([[0.1, 0.8, 0.1],
 
 v = np.array([0.1, 0.6, 0.3])
 
-(N, tau) = (6, 2)
+(N, tau) = (8, 3)
 tree = r.core.MarkovChainScenarioTreeFactory(transition_prob=p,
                                              initial_distribution=v,
                                              num_stages=N, stopping_time=tau).create()
@@ -34,21 +34,21 @@ tree = r.core.MarkovChainScenarioTreeFactory(transition_prob=p,
 # RAOCP generation -----------------------------------------------------------------------------------------------------
 (nl, l) = nodes.Nonleaf(), nodes.Leaf()
 (num_states, num_inputs) = 3, 2
-factor = .05
+factor = 0.1
 
-Aw = factor * np.array([[1, 2, 1], [1, 1, 2], [2, 1, 1]])
-Bw = factor * np.array([[1, 0], [1, 2], [0, 2]])
-As = [0.5 * Aw, Aw, -0.5 * Aw]  # n x n matrices
-Bs = [-0.5 * Bw, Bw, 0.5 * Bw]  # n x u matrices
+Aw = factor * np.array([[1, 2, 3], [3, 1, 2], [2, 3, 1]])
+Bw = factor * np.array([[3, 0], [1, 0], [0, 2]])
+As = [1.5 * Aw, Aw, -1.5 * Aw]  # n x n matrices
+Bs = [-1.5 * Bw, Bw, 1.5 * Bw]  # n x u matrices
 mark_dynamics = [dynamics.Dynamics(As[0], Bs[0]),
                  dynamics.Dynamics(As[1], Bs[1]),
                  dynamics.Dynamics(As[2], Bs[2])]
 
 Q = factor * np.eye(num_states)  # n x n matrix
-Qs = [.2 * Q, .2 * Q, .2 * Q]
+Qs = [2 * Q, 2 * Q, 2 * Q]
 R = factor * np.eye(num_inputs)  # u x u matrix OR scalar
-Rs = [.2 * R, .2 * R, .2 * R]
-Pf = factor * 50 * np.eye(num_states)  # n x n matrix
+Rs = [1 * R, 1 * R, 1 * R]
+Pf = factor * 2 * np.eye(num_states)  # n x n matrix
 mark_nl_costs = [costs.Quadratic(nl, Qs[0], Rs[0]),
                  costs.Quadratic(nl, Qs[1], Rs[1]),
                  costs.Quadratic(nl, Qs[2], Rs[2])]
@@ -56,8 +56,8 @@ leaf_cost = costs.Quadratic(l, Pf)
 
 nonleaf_size = num_states + num_inputs
 leaf_size = num_states
-x_lim = 7
-u_lim = 0.01
+x_lim = 6
+u_lim = 0.3
 nl_min = np.vstack((-x_lim * np.ones((num_states, 1)),
                     -u_lim * np.ones((num_inputs, 1))))
 nl_max = np.vstack((x_lim * np.ones((num_states, 1)),
@@ -68,96 +68,93 @@ nl_rect = rectangle.Rectangle(nl, nl_min, nl_max)
 l_rect = rectangle.Rectangle(l, l_min, l_max)
 
 alpha = .95
-risk = risks.AVaR(alpha)
+risk_1 = risks.AVaR(0.1)
+risk_5 = risks.AVaR(0.5)
+risk_9 = risks.AVaR(0.9)
 
-problem = r.core.RAOCP(scenario_tree=tree) \
+problem_1 = r.core.RAOCP(scenario_tree=tree) \
     .with_markovian_dynamics(mark_dynamics) \
     .with_markovian_nonleaf_costs(mark_nl_costs) \
     .with_all_leaf_costs(leaf_cost) \
-    .with_all_risks(risk) \
+    .with_all_risks(risk_1) \
     .with_all_nonleaf_constraints(nl_rect) \
     .with_all_leaf_constraints(l_rect)
 
-simple_solver = r.core.Solver(problem_spec=problem, max_iters=5000, tol=1e-3)
-super_with_resid_solver = r.core.Solver(problem_spec=problem, max_iters=5000, tol=1e-3)\
-    .with_residuals_direction()\
+problem_5 = r.core.RAOCP(scenario_tree=tree) \
+    .with_markovian_dynamics(mark_dynamics) \
+    .with_markovian_nonleaf_costs(mark_nl_costs) \
+    .with_all_leaf_costs(leaf_cost) \
+    .with_all_risks(risk_5) \
+    .with_all_nonleaf_constraints(nl_rect) \
+    .with_all_leaf_constraints(l_rect)
+
+problem_9 = r.core.RAOCP(scenario_tree=tree) \
+    .with_markovian_dynamics(mark_dynamics) \
+    .with_markovian_nonleaf_costs(mark_nl_costs) \
+    .with_all_leaf_costs(leaf_cost) \
+    .with_all_risks(risk_9) \
+    .with_all_nonleaf_constraints(nl_rect) \
+    .with_all_leaf_constraints(l_rect)
+
+simple_solver_1 = r.core.Solver(problem_spec=problem_1, max_iters=10000, tol=1e-3)
+simple_solver_5 = r.core.Solver(problem_spec=problem_5, max_iters=10000, tol=1e-3)
+simple_solver_9 = r.core.Solver(problem_spec=problem_9, max_iters=10000, tol=1e-3)
+super_solver_1 = r.core.Solver(problem_spec=problem_1, max_iters=10000, tol=1e-3)\
+    .with_andersons_direction(memory_size=5)\
     .with_spock()
-super_with_ander_solver = r.core.Solver(problem_spec=problem, max_iters=5000, tol=1e-3)\
-    .with_andersons_direction()\
+super_solver_5 = r.core.Solver(problem_spec=problem_5, max_iters=10000, tol=1e-3)\
+    .with_andersons_direction(memory_size=5)\
     .with_spock()
+super_solver_9 = r.core.Solver(problem_spec=problem_9, max_iters=10000, tol=1e-3)\
+    .with_andersons_direction(memory_size=5)\
+    .with_spock()
+
 initial_state = np.array([[5], [-6], [-1]])
 
 
 # write = create new solution, read = use last solution
 read, write = 'rb', 'wb'
-filename = ['simple_solver.pk', 'resid_solver.pk', 'super_solver.pk']
-command = [read, read, read]
+# solver = [solver, filename.pk, command, plot name]
+solvers = [[simple_solver_1, 'cp_1.pk', read, "cp, a=0.1"],
+           [simple_solver_5, 'cp_5.pk', read, "cp, a=0.5"],
+           [simple_solver_9, 'cp_9.pk', read, "cp, a=0.9"],
+           [super_solver_5, 'spock_5.pk', read, "spock, a=0.5"],
+           [super_solver_9, 'spock_9.pk', read, "spock, a=0.9"],
+           [super_solver_1, 'spock_1.pk', read, "spock, a=0.1"]]
+num_solvers = len(solvers)
+status = [None] * num_solvers
+iters = [None] * num_solvers
+chock_calls = [None] * num_solvers
+for i in range(num_solvers):
+    if solvers[i][2] == write:
+        status[i], iters[i], chock_calls[i] = solvers[i][0].run(initial_state=initial_state)
+        if status[i] == 0:
+            print(f"{solvers[i][1]} solver success at iteration {iters[i]}")
+        else:
+            print(f"{solvers[i][1]} solver fail at iteration {iters[i]}")
+        program_done()
+        # solvers[i][0].plot_residuals(solvers[i][1])
+        # solvers[i][0].plot_solution(solvers[i][1])
+        # solvers[i][0].print_states()
+        # solvers[i][0].print_inputs()
+    with open(solvers[i][1], solvers[i][2]) as fi:
+        if solvers[i][2] == write:
+            pickle.dump(solvers[i][0], fi)
+        else:
+            solvers[i][0] = pickle.load(fi)
 
 
-# simple chock
-if command[0] == write:
-    simple_status, iters, chock_calls = simple_solver.run(initial_state=initial_state)
-    if simple_status == 0:
-        print(f"simple solver success at iteration {iters}")
-    else:
-        print(f"simple solver fail at iteration {iters}")
-    program_done()
-    # simple_solver.plot_residuals("simple")
-    # simple_solver.plot_solution("simple")
-    # simple_solver.print_states()
-    # simple_solver.print_inputs()
+# # plot specific solvers
+# swas_print = core_printer.Printer(super_with_ander_solver.get_cache)
+# swas_print.plot_residuals("super")
 
+# # plot different solver residual comparisons
+# xis = [0]
+# caches = [simple_solver.get_cache, super_with_ander_solver.get_cache]
+# names = ["cp", "cp+sm+ander"]
+# for xi in xis:
+#     core_printer.plot_residual_comparisons(xi, caches, names)
 
-# resid chock
-if command[1] == write:
-    resid_status, outer_iters, chock_calls = super_with_resid_solver.run(initial_state=initial_state)
-    if resid_status == 0:
-        print(f"resid solver success: outer = {outer_iters}, chock calls = {chock_calls}")
-    else:
-        print(f"resid solver fail: outer = {outer_iters}, chock calls = {chock_calls}")
-    program_done()
-    # super_solver.plot_residuals("super")
-    # super_solver.plot_solution("super")
-    # super_solver.print_states()
-    # super_solver.print_inputs()
-
-
-# super chock
-if command[2] == write:
-    ander_status, outer_iters, chock_calls = super_with_ander_solver.run(initial_state=initial_state)
-    if ander_status == 0:
-        print(f"ander solver success: outer = {outer_iters}, chock calls = {chock_calls}")
-    else:
-        print(f"ander solver fail: outer = {outer_iters}, chock calls = {chock_calls}")
-    program_done()
-    # super_solver.plot_residuals("super")
-    # super_solver.plot_solution("super")
-    # super_solver.print_states()
-    # super_solver.print_inputs()
-
-
-# use pickle to store solved problems instead of rerunning
-with open(filename[0], command[0]) as fi:
-    if command[0] == write:
-        pickle.dump(simple_solver, fi)
-    else:
-        simple_solver = pickle.load(fi)
-with open(filename[1], command[1]) as fi:
-    if command[1] == write:
-        pickle.dump(super_with_resid_solver, fi)
-    else:
-        super_with_resid_solver = pickle.load(fi)
-with open(filename[2], command[2]) as fi:
-    if command[2] == write:
-        pickle.dump(super_with_ander_solver, fi)
-    else:
-        super_with_ander_solver = pickle.load(fi)
-
-
-# plot comparisons
-for xi in [0]:  # , 1, 2]:
-    core_printer.plot_residual_comparisons(xi,
-                                           simple_solver.get_cache,
-                                           super_with_resid_solver.get_cache,
-                                           super_with_ander_solver.get_cache,
-                                           "simple", "resid", "ander")
+# plot different alpha solver comparisons
+for xi in [0]:
+    core_printer.plot_residual_comparisons(xi, solvers)

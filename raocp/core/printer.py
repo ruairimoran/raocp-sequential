@@ -1,21 +1,24 @@
 import numpy as np
-import raocp.core.solver as core_solver
+import raocp.core.cache as core_cache
 import matplotlib.pyplot as plt
 import tikzplotlib as tikz
 
 
-def plot_residual_comparisons(xi, cache1, cache2, cache3, solver1_name, solver2_name, solver3_name):
+def plot_residual_comparisons(xi, solvers):
     width = 2
-    error1 = cache1.get_error_cache()
-    error2 = cache2.get_error_cache()
-    error3 = cache3.get_error_cache()
-    plt.semilogy(error1[:, xi], linewidth=width, linestyle="solid")
-    plt.semilogy(error2[:, xi], linewidth=width, linestyle="solid")
-    plt.semilogy(error3[:, xi], linewidth=width, linestyle="solid")
-    plt.title(f"comparison of {solver1_name}, {solver2_name} and {solver3_name} solvers xi_{xi} residual value")
-    plt.ylabel(r"log(residual value)", fontsize=12)
+    num_solvers = len(solvers)
+    error_caches = [None] * num_solvers
+    plot_names = [None] * num_solvers
+    for i in range(num_solvers):
+        error_caches[i] = solvers[i][0].get_cache.get_error_cache()
+        plt.semilogy(error_caches[i][:, xi], linewidth=width, linestyle="solid")
+        plot_names[i] = solvers[i][3]
+
+    plt.title(f"Comparison of solvers FPR, xi_{xi}")
+    plt.ylabel(r"log(infinity-norm of FPR)", fontsize=12)
     plt.xlabel(r"iteration", fontsize=12)
-    plt.legend((f"{solver1_name}", f"{solver2_name}", f"{solver3_name}"))
+    plt.legend(plot_names)
+    tikz.save('8-3-comparison.tex')
     plt.show()
 
 
@@ -24,9 +27,8 @@ class Printer:
     Printer and plotter for raocp solutions
     """
 
-    def __init__(self, solver: core_solver.Solver):
-        self.__solver = solver
-        self.__cache = solver.get_cache()
+    def __init__(self, solver_cache: core_cache.Cache):
+        self.__cache = solver_cache
         self.__error_cache = self.__cache.get_error_cache()
 
     def print_states(self):

@@ -477,12 +477,12 @@ class Cache:
         index = 0
         for i in range(len(prim_)):
             size_ = prim_[i].size
-            prim_[i] = np.array(vector_[index: index + size_]).reshape(-1, 1)
+            prim_[i] = vector_[index: index + size_]
             index += size_
 
         for i in range(len(dual_)):
             size_ = dual_[i].size
-            dual_[i] = np.array(vector_[index: index + size_]).reshape(-1, 1)
+            dual_[i] = vector_[index: index + size_]
             index += size_
 
         return prim_, dual_
