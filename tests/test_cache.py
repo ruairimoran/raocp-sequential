@@ -9,6 +9,7 @@ import raocp.core.raocp_spec as core_spec
 import raocp.core.risks as core_risks
 import raocp.core.scenario_tree as core_tree
 import raocp.core.constraints.rectangle as rectangle
+from copy import deepcopy
 
 
 class TestCache(unittest.TestCase):
@@ -88,29 +89,53 @@ class TestCache(unittest.TestCase):
         TestCache._construct_tree_from_markov()
         TestCache._construct_raocp_from_markov()
 
+    def test_set_primal(self):
+        mock_cache, seg_p, seg_d = self._construct_mock_cache()
+        prim = mock_cache.get_primal()  # template
+        length = len(prim)
+        primal_set = deepcopy(prim)
+        for i in range(length):
+            primal_set[i] = np.random.randn(prim[i].size).reshape(-1, 1)
+
+        mock_cache.set_primal(primal_set)
+        primal_get = mock_cache.get_primal()
+        for i in range(length):
+            self.assertTrue(np.array_equal(primal_set[i], primal_get[i]))
+
+    def test_set_dual(self):
+        mock_cache, seg_p, seg_d = self._construct_mock_cache()
+        dual = mock_cache.get_dual()  # template
+        length = len(dual)
+        dual_set = deepcopy(dual)
+        for i in range(length):
+            dual_set[i] = np.random.randn(dual[i].size).reshape(-1, 1)
+
+        mock_cache.set_dual(dual_set)
+        dual_get = mock_cache.get_dual()
+        for i in range(length):
+            self.assertTrue(np.array_equal(dual_set[i], dual_get[i]))
+
     def test_cache_initial_state(self):
         mock_cache, seg_p, seg_d = self._construct_mock_cache()
-        _, prim = mock_cache.get_primal()  # template
+        prim = mock_cache.get_primal()  # template
         prim[seg_p[1]] = np.random.randn(prim[seg_p[1]].size).reshape(-1, 1)
         mock_cache.cache_initial_state(prim[seg_p[1]])
-        _, old_prim = mock_cache.get_primal()
         self.assertTrue(np.array_equal(prim[seg_p[1]], mock_cache._Cache__initial_state))
-        self.assertTrue(np.array_equal(prim[seg_p[1]], old_prim[0]))
         self.assertTrue(np.array_equal(prim[seg_p[1]], mock_cache._Cache__primal_cache[0][0]))
 
     def test_proximal_of_relaxation_s_at_stage_zero(self):
         mock_cache, seg_p, seg_d = self._construct_mock_cache()
         # s = segment 5
         s = 5
-        _, prim = mock_cache.get_primal()  # get old primal as template
+        prim = mock_cache.get_primal()  # get old primal as template
         parameter = np.random.randn(prim[seg_p[s]].size)
         mock_cache.proximal_of_relaxation_s_at_stage_zero(parameter)
-        prim, _ = mock_cache.get_primal()  # get modified primal
+        prim = mock_cache.get_primal()  # get modified primal
         self.assertEqual(-parameter, prim[seg_p[s]][0])
 
     def test_project_on_dynamics(self):
         mock_cache, seg_p, _ = self._construct_mock_cache()
-        _, prim = mock_cache.get_primal()  # template
+        prim = mock_cache.get_primal()  # template
         for i in range(seg_p[1], seg_p[3]):
             prim[i] = np.random.randn(prim[i].size).reshape(-1, 1)
 
@@ -118,7 +143,7 @@ class TestCache(unittest.TestCase):
         mock_cache.cache_initial_state(prim[seg_p[1]])
         mock_cache.set_primal(prim)
         mock_cache.project_on_dynamics()
-        dp_result, _ = mock_cache.get_primal()
+        dp_result = mock_cache.get_primal()
         x_dp = np.asarray(dp_result[seg_p[1]: seg_p[2]])[:, :, 0]
         u_dp = np.asarray(dp_result[seg_p[2]: seg_p[3]])[:, :, 0]
         # ensure x0 stayed the same
@@ -160,7 +185,7 @@ class TestCache(unittest.TestCase):
 
     def test_kernel_projection(self):
         mock_cache, seg_p, _ = self._construct_mock_cache()
-        _, prim = mock_cache.get_primal()  # template
+        prim = mock_cache.get_primal()  # template
         for i in range(seg_p[3], seg_p[6]):
             if i == seg_p[4] or i == seg_p[5]:
                 pass
@@ -169,7 +194,7 @@ class TestCache(unittest.TestCase):
 
         mock_cache.set_primal(prim)
         mock_cache.project_on_kernel()
-        proj, _ = mock_cache.get_primal()
+        proj = mock_cache.get_primal()
         constraint_matrix = mock_cache.get_kernel_constraint_matrices()
         nullspace_matrix = mock_cache.get_nullspace_matrices()
         for i in range(self.__tree_from_markov.num_nonleaf_nodes):
@@ -214,13 +239,13 @@ class TestCache(unittest.TestCase):
         while parameter == 0:
             parameter = np.linalg.norm(np.random.randn(1), 2)
 
-        _, dual = mock_cache.get_dual()
+        dual = mock_cache.get_dual()
         for i in range(seg_d[1], seg_d[15]):
             dual[i] = np.random.randn(dual[i].size).reshape(-1, 1)
 
         mock_cache.set_dual(dual)
         mock_cache.modify_dual(parameter)
-        new_dual, _ = mock_cache.get_dual()
+        new_dual = mock_cache.get_dual()
         for i in range(seg_d[1], seg_d[15]):
             test_result = dual[i] / parameter
             self.assertTrue(np.allclose(test_result, new_dual[i]))
@@ -228,7 +253,7 @@ class TestCache(unittest.TestCase):
     def test_add_halves(self):
         mock_cache, _, seg_d = self._construct_mock_cache()
         mock_cache.add_halves()
-        dual, _ = mock_cache.get_dual()
+        dual = mock_cache.get_dual()
         minus_half = -0.5
         plus_half = 0.5
         for i in dual[seg_d[5]: seg_d[6]]:
@@ -245,41 +270,41 @@ class TestCache(unittest.TestCase):
 
     def test_project_on_constraints_nonleaf(self):
         mock_cache, _, seg_d = self._construct_mock_cache()
-        _, dual = mock_cache.get_dual()
+        dual = mock_cache.get_dual()
         for i in range(seg_d[1], seg_d[15]):
             dual[i] = np.random.randn(dual[i].size).reshape(-1, 1)
 
         mock_cache.set_dual(dual)
         mock_cache.project_on_constraints_nonleaf()
-        new_dual, _ = mock_cache.get_dual()
+        new_dual = mock_cache.get_dual()
         for i in range(len(dual)):
             self.assertTrue(new_dual[i].shape == dual[i].shape)
 
     def test_project_on_constraints_leaf(self):
         mock_cache, _, seg_d = self._construct_mock_cache()
-        _, dual = mock_cache.get_dual()
+        dual = mock_cache.get_dual()
         for i in range(seg_d[1], seg_d[15]):
             dual[i] = np.random.randn(dual[i].size).reshape(-1, 1)
 
         mock_cache.set_dual(dual)
         mock_cache.project_on_constraints_leaf()
-        new_dual, _ = mock_cache.get_dual()
+        new_dual = mock_cache.get_dual()
         for i in range(len(dual)):
             self.assertTrue(new_dual[i].shape == dual[i].shape)
 
     def test_modify_projection(self):
         mock_cache, _, seg_d = self._construct_mock_cache()
-        _, zero_dual = mock_cache.get_dual()
+        zero_dual = mock_cache.get_dual()
         parameter = 0
         while parameter == 0:
             parameter = np.linalg.norm(np.random.randn(1), 2)
 
-        _, dual = mock_cache.get_dual()
+        dual = mock_cache.get_dual()
         for i in range(seg_d[1], seg_d[15]):
             dual[i] = np.random.randn(dual[i].size).reshape(-1, 1)
 
         mock_cache.modify_projection(parameter, dual)
-        new_dual, _ = mock_cache.get_dual()
+        new_dual = mock_cache.get_dual()
         for i in range(seg_d[1], seg_d[15]):
             test_result = parameter * (dual[i] - zero_dual[i])
             self.assertTrue(np.allclose(test_result, new_dual[i]))

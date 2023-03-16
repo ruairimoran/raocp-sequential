@@ -37,6 +37,7 @@ regular_test() {
     python -W ignore tests/test_risks.py -v
     python -W ignore tests/test_scenario_tree.py -v
     python -W ignore tests/test_solver.py -v
+    python -W ignore tests/test_supermann.py -v
 }
 
 

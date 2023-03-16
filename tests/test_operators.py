@@ -89,8 +89,8 @@ class TestOperators(unittest.TestCase):
         segments_p = TestOperators.__cache_from_raocp.get_primal_segments()
         segments_d = TestOperators.__cache_from_raocp.get_dual_segments()
         # get template of primal and dual for sizes
-        _, primal = TestOperators.__cache_from_raocp.get_primal()
-        _, dual = TestOperators.__cache_from_raocp.get_dual()
+        primal = TestOperators.__cache_from_raocp.get_primal()
+        dual = TestOperators.__cache_from_raocp.get_dual()
         # setup memory
         random_primal = primal.copy()
         random_dual = dual.copy()
