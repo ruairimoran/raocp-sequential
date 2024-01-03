@@ -1,3 +1,3 @@
-# raocp-toolbox
+# raocp-sequential
 
-not for the faint of heart
+Risk-averse optimal control problem solver
